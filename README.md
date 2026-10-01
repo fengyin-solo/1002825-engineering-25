@@ -17,12 +17,53 @@
 ├── backend/                  FastAPI（Python） 后端
 │   ├── app/routers/          每个业务模块一组接口
 │   ├── app/services/         业务规则与状态流转
-│   └── app/store.py          内存数据仓库与示例数据
+│   ├── app/fixtures.py       联调固定示例数据（问题类型、转办部门、工单）
+│   ├── app/counts.py         工单数量核对口径（概览页与列表页同一份）
+│   ├── app/jointdebug.py     导入、重算、核对的固定动作
+│   ├── app/preflight.py      起服务前的端口与数据库连通预检
+│   ├── app/cli.py            preflight / prepare / recompute / status 命令
+│   ├── app/db.py             SQLite 数据访问层（工单按记录编号唯一）
+│   └── app/store.py          内存数据仓库；热线工单改由数据库提供
 ├── .gitignore
 └── docker-compose.yml
 ```
 
 ## 启动
+
+### 联调准备（固定动作，每次联调前跑一遍）
+
+市民热线联调时曾出现「后端没起来，页面转办部门与处理结果只有空表」的误会，
+为此准备动作固化成一条命令：
+
+```bash
+make prepare      # backend 目录下等价于 .venv/bin/python -m app.cli prepare
+```
+
+它按顺序做四件事，任何一步不过都会打印缺了哪一步，并以非零码退出：
+
+1. **端口检查**：`127.0.0.1:8000` 被占用时提示释放端口或用 `APP_PORT` 换端口；
+2. **数据库连通检查**：自动创建 SQLite 库目录（`backend/data/`），连不上则说明
+   缺的是建目录、可写权限还是 `DATABASE_URL` 配置；
+3. **幂等导入固定示例数据**：热线工单的「问题类型」「转办部门」取自
+   `backend/app/fixtures.py` 这一份固定数据；同一「记录编号」再次入库只更新、
+   不新增，重复导入不会把工单叠成两份；
+4. **自动核对工单数量**：导入后比对工单总数与分状态条数，与示例数据不一致就算
+   没准备好，不允许带着空表起服务。
+
+只做起服务前的只读预检（不导入、不改数据）：
+
+```bash
+make preflight    # .venv/bin/python -m app.cli preflight
+make status       # 查看当前准备状态与核对结果
+```
+
+工单数量的核对口径定义在 `backend/app/counts.py`（概览页、热线列表页、导入核对
+共用同一份口径）。口径规矩变更时把 `COUNT_RULE_VERSION` 加一，存量数据会在下次
+`make prepare` 或服务启动时自动重算，也可以手动执行：
+
+```bash
+make recompute
+```
 
 ### 后端
 
@@ -32,7 +73,14 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ./run.sh
 ```
 
+`run.sh` 启动前会自动执行上面那套固定动作（预检 → 幂等导入 → 核对），
+核对不通过会直接拒绝启动。
+
 健康检查：`curl http://127.0.0.1:8000/api/health`
+（`ok=false` 时会说明数据库没连通还是示例工单没核对通过）。
+
+也可以通过接口让服务端重跑固定动作：`POST /api/jointdebug/prepare`、
+`POST /api/jointdebug/recompute`，状态见 `GET /api/jointdebug/readiness`。
 
 ### 前端
 
@@ -44,6 +92,9 @@ npm run dev
 
 前端默认监听 `http://127.0.0.1:5173/`，dev server 不会自动打开浏览器，
 需要自己访问。`/api` 由 vite 代理到后端 `http://127.0.0.1:8000`。
+
+市民热线页后端连不上时会直接提示「后端服务没起来，请先 make prepare」，
+不会再把空表误判成页面坏了；页面上的工单数量、分状态卡片与运营概览页同源。
 
 ## 业务模块
 

@@ -13,6 +13,8 @@ class PageResult(BaseModel, Generic[T]):
     total: int
     page: int = 1
     size: int = 20
+    # 市民热线页面卡片用：与概览页同一核对口径的分状态数量，缺省不影响其他模块。
+    stats: dict[str, Any] | None = None
 
 
 class ActionResult(BaseModel):
