@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import reconcile
 from app.config import settings
 from app.routers import ROUTERS
 from app.store import store
@@ -28,11 +29,21 @@ for module in ROUTERS:
 
 @app.get("/api/health")
 def health() -> dict[str, object]:
-    """健康检查：确认服务已经监听、示例数据已经就绪。"""
-    return {"ok": True, "app": settings.app_name, "modules": len(store.module_names())}
+    """健康检查：确认服务已经监听、示例数据核对通过、联调准备就绪。"""
+    ready, report = reconcile.verify(store)
+    return {
+        "ok": True,
+        "ready": ready,
+        "app": settings.app_name,
+        "modules": len(store.module_names()),
+        "rule_version": report["rule_version"],
+    }
 
 
 @app.get("/api/overview")
 def overview() -> dict[str, object]:
-    """运营概览：把各业务模块的待处理量汇总成看板卡片。"""
-    return store.overview()
+    """运营概览：把各业务模块的待处理量汇总成看板卡片，并带上联调就绪标记。"""
+    ready, _report = reconcile.verify(store)
+    payload = store.overview()
+    payload["ready"] = ready
+    return payload

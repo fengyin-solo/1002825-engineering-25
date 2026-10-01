@@ -65,15 +65,21 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
-import { request } from '@/api/client'
+import { fetchJson, request } from '@/api/client'
 
 type Row = Record<string, string | number | null>
+type StatsPayload = { total: number; by_status: Record<string, number> }
 
 const ENDPOINT = '/api/complaint'
 const columns = ["记录编号", "来电人", "来电内容", "问题位置", "问题类型", "转办部门", "处理结果", "记录状态"]
 const actions = ["转办部门", "处理反馈", "办结归档"]
 const statuses = ["待转办", "已转办", "处理中", "已办结"]
-const stats = [{"label": "待转办记录", "value": 0}, {"label": "处理中记录", "value": 0}, {"label": "已办结记录", "value": 0}]
+const stats = ref([
+  { label: '工单总数', value: 0 },
+  { label: '待转办记录', value: 0 },
+  { label: '处理中记录', value: 0 },
+  { label: '已办结记录', value: 0 },
+])
 
 const rows = ref<Row[]>([])
 const total = ref(0)
@@ -105,6 +111,7 @@ async function runAction(action: string, row: Row) {
       throw new Error('市民热线动作未生效，请稍后重试')
     }
     await reload()
+    await reloadStats()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '市民热线操作失败'
   }
@@ -126,5 +133,22 @@ async function reload() {
   }
 }
 
-onMounted(reload)
+async function reloadStats() {
+  try {
+    const payload = await fetchJson<StatsPayload>(`${ENDPOINT}/stats`)
+    stats.value = [
+      { label: '工单总数', value: payload.total },
+      { label: '待转办记录', value: payload.by_status['待转办'] ?? 0 },
+      { label: '处理中记录', value: payload.by_status['处理中'] ?? 0 },
+      { label: '已办结记录', value: payload.by_status['已办结'] ?? 0 },
+    ]
+  } catch {
+    // 列表请求已经把错误写到页脚，这里不再重复提示
+  }
+}
+
+onMounted(() => {
+  void reload()
+  void reloadStats()
+})
 </script>
